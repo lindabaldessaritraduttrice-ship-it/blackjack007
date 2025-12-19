@@ -1,79 +1,80 @@
 import streamlit as st
 import random
+import time
 
-st.set_page_config(page_title="Blackjack Party", page_icon="🍻")
+st.set_page_config(page_title="Blackjack Live", page_icon="🃏")
 
-# --- CONFIGURAZIONE INIZIALE ---
-if 'giocatori' not in st.session_state:
-    # Qui puoi aggiungere i nomi dei tuoi amici!
-    st.session_state.nomi = ["Giocatore 1", "Giocatore 2", "Giocatore 3"]
-    st.session_state.fiches = {nome: 21 for nome in st.session_state.nomi}
-    st.session_state.mazziere_idx = 0
-    st.session_state.turno_idx = 1 # Inizia il primo giocatore dopo il banco
-    st.session_state.fase = "PUNTATA"
-    st.session_state.puntate = {}
+# --- DATABASE CONDIVISO ---
+@st.cache_resource
+def get_server_data():
+    return {
+        "nomi": ["Giocatore 1", "Giocatore 2", "Banco"], # Cambia i nomi qui!
+        "fiches": {"Giocatore 1": 21, "Giocatore 2": 21, "Banco": 100},
+        "fase": "PUNTATA",
+        "sfidante_idx": 0,
+        "carta_s": 0, "carta_b": 0, "puntata": 0,
+        "ultimo_risultato": "In attesa..."
+    }
 
-def get_mazziere():
-    return st.session_state.nomi[st.session_state.mazziere_idx]
+data = get_server_data()
 
-def get_giocatore_corrente():
-    idx = st.session_state.turno_idx % len(st.session_state.nomi)
-    return st.session_state.nomi[idx]
+# Titolo e Classifica
+st.title("🎰 Blackjack Multiplayer")
+st.sidebar.title("💰 Fiches")
+for n, f in data["fiches"].items():
+    st.sidebar.write(f"{n}: {f}")
 
-st.title("🃏 Blackjack Party: Turno al Banco!")
-st.sidebar.title("💰 Classifica Fiches")
-for nome, f in st.session_state.fiches.items():
-    st.sidebar.write(f"{nome}: {f} 🪙")
+# Funzione per cambiare turno
+def prossimo_turno():
+    data["sfidante_idx"] = (data["sfidante_idx"] + 1) % (len(data["nomi"]) - 1)
+    data["fase"] = "PUNTATA"
 
-mazziere = get_mazziere()
-giocatore = get_giocatore_corrente()
+sfidante = data["nomi"][data["sfidante_idx"]]
 
-st.info(f"👑 Il Banco oggi è: **{mazziere}**")
+st.info(f"⚔️ Turno di: **{sfidante}**")
+st.write(f"📢 Stato: {data['ultimo_risultato']}")
 
-# --- FASE 1: PUNTATA ---
-if st.session_state.fase == "PUNTATA":
-    if giocatore == mazziere: # Se il turno torna al mazziere, la sfida è finita
-        st.session_state.mazziere_idx = (st.session_state.mazziere_idx + 1) % len(st.session_state.nomi)
-        st.session_state.turno_idx = (st.session_state.mazziere_idx + 1)
-        st.write("🔄 Il giro è finito! Il ruolo di Banco passa al prossimo.")
-        if st.button("Inizia Nuovo Giro"): st.rerun()
-    else:
-        st.subheader(f"Tocca a **{giocatore}**: Quanto punti contro {mazziere}?")
-        col1, col2, col3 = st.columns(3)
-        if col1.button("1 🪙"): st.session_state.puntata = 1; st.session_state.fase = "GIOCO"
-        if col2.button("2 🪙"): st.session_state.puntata = 2; st.session_state.fase = "GIOCO"
-        if col3.button("3 🪙"): st.session_state.puntata = 3; st.session_state.fase = "GIOCO"
-        if st.session_state.fase == "GIOCO": st.rerun()
-
-# --- FASE 2: GIOCO (1 CARTA) ---
-elif st.session_state.fase == "GIOCO":
-    st.write(f"🔥 **{giocatore}** vs **{mazziere}** (Puntata: {st.session_state.puntata})")
+# --- LOGICA DI GIOCO ---
+if data["fase"] == "PUNTATA":
+    st.subheader(f"{sfidante}, quanto punti?")
+    c1, c2, c3 = st.columns(3)
+    p = 0
+    if c1.button("1 🪙"): p = 1
+    if c2.button("2 🪙"): p = 2
+    if c3.button("3 🪙"): p = 3
     
-    if st.button("SCOPRI LE CARTE 🃏"):
-        valori = [2,3,4,5,6,7,8,9,10,10,10,10,11]
-        carta_g = random.choice(valori)
-        carta_b = random.choice(valori)
-        
-        st.write(f"Tua carta: **{carta_g}**")
-        st.write(f"Carta del Banco: **{carta_b}**")
-        
-        if carta_g > carta_b:
-            st.success(f"{giocatore} VINCE!")
-            st.session_state.fiches[giocatore] += st.session_state.puntata
-            st.session_state.fiches[mazziere] -= st.session_state.puntata
-        elif carta_g < carta_b:
-            st.error(f"{mazziere} VINCE!")
-            st.session_state.fiches[giocatore] -= st.session_state.puntata
-            st.session_state.fiches[mazziere] += st.session_state.puntata
-        else:
-            st.warning("PAREGGIO!")
-            
-        st.session_state.fase = "PROSSIMO"
+    if p > 0:
+        data["puntata"] = p
+        data["carta_s"] = random.randint(2, 11)
+        data["fase"] = "BANCO"
+        data["ultimo_risultato"] = f"{sfidante} ha puntato {p} e ha un {data['carta_s']}. Tocca al Banco!"
         st.rerun()
 
-# --- FASE 3: PASSA TURNO ---
-elif st.session_state.fase == "PROSSIMO":
-    if st.button(f"Passa il turno al prossimo giocatore"):
-        st.session_state.turno_idx += 1
-        st.session_state.fase = "PUNTATA"
+elif data["fase"] == "BANCO":
+    st.write(f"🃏 {sfidante} ha un **{data['carta_s']}**")
+    if st.button("GIRA CARTA BANCO 👑"):
+        data["carta_b"] = random.randint(2, 11)
+        
+        if data["carta_s"] > data["carta_b"]:
+            data["fiches"][sfidante] += data["puntata"]
+            data["fiches"]["Banco"] -= data["puntata"]
+            data["ultimo_risultato"] = f"{sfidante} VINCE ({data['carta_s']} vs {data['carta_b']})!"
+        elif data["carta_s"] < data["carta_b"]:
+            data["fiches"][sfidante] -= data["puntata"]
+            data["fiches"]["Banco"] += data["puntata"]
+            data["ultimo_risultato"] = f"BANCO VINCE ({data['carta_b']} vs {data['carta_s']})!"
+        else:
+            data["ultimo_risultato"] = "PAREGGIO!"
+        
+        data["fase"] = "RISULTATO"
         st.rerun()
+
+elif data["fase"] == "RISULTATO":
+    st.success(data["ultimo_risultato"])
+    if st.button("PROSSIMO GIOCATORE ➡️"):
+        prossimo_turno()
+        st.rerun()
+
+# --- AUTO AGGIORNAMENTO OGNI 3 SECONDI ---
+time.sleep(3)
+st.rerun()
